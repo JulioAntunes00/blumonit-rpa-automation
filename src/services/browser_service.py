@@ -362,136 +362,71 @@ class BrowserService:
             self.log(f"  [DEBUG] HTML do modal: {modal_html[:300]}")
 
             # ============================================================
-            # 7+8+9. STATUS + OBSERVAÇÃO + SALVAR (TUDO VIA JAVASCRIPT)
+            # 7+8. STATUS + OBSERVAÇÃO (VIA PLAYWRIGHT NATIVO)
             # ============================================================
-            # Como o Playwright não consegue "ver" os elementos do modal,
-            # vamos fazer TUDO direto no DOM via JavaScript.
             try:
-                resultado_js = page.evaluate('''(args) => {
-                    const log = [];
-                    
-                    // ---- ENCONTRAR O SELECT DE STATUS ----
-                    const selects = document.querySelectorAll('select');
-                    log.push('Total selects no DOM: ' + selects.length);
-                    
-                    let selectStatus = null;
-                    for (let s of selects) {
-                        log.push('Select encontrado: options=' + s.options.length + ', value=' + s.value);
-                        // Pega o primeiro select que tenha opções
-                        if (s.options.length > 0 && !selectStatus) {
-                            selectStatus = s;
-                        }
-                    }
-                    
-                    if (selectStatus) {
-                        // Procura a opção que corresponde ao status desejado
-                        let encontrou = false;
-                        let optionIndex = -1;
-                        const statusDesejado = args.status.trim().toLowerCase();
-                        
-                        // Pass 1: Busca Exata
-                        for (let i = 0; i < selectStatus.options.length; i++) {
-                            const optText = selectStatus.options[i].text.trim().toLowerCase();
-                            log.push('  Opção ' + i + ': "' + selectStatus.options[i].text + '"');
-                            if (optText === statusDesejado) {
-                                optionIndex = i;
-                                encontrou = true;
-                                break;
-                            }
-                        }
-                        
-                        // Pass 2: Busca Parcial (se a exata falhar)
-                        if (!encontrou) {
-                            for (let i = 0; i < selectStatus.options.length; i++) {
-                                const optText = selectStatus.options[i].text.trim().toLowerCase();
-                                // Previne falsos positivos perigosos (ex: "inativo" bater com "ativo")
-                                if (statusDesejado === "ativo" && (optText.includes("inativo") || optText.includes("desativado") || optText.includes("não") || optText.includes("nao"))) {
-                                    continue;
-                                }
-                                if (optText.includes(statusDesejado)) {
-                                    optionIndex = i;
-                                    encontrou = true;
-                                    log.push('  [!] Match parcial usado: "' + optText + '" para "' + statusDesejado + '"');
-                                    break;
-                                }
-                            }
-                        }
-                        
-                        if (encontrou && optionIndex >= 0) {
-                            // Seta o valor via o setter nativo (funciona com React)
-                            const nativeSetter = Object.getOwnPropertyDescriptor(
-                                window.HTMLSelectElement.prototype, 'value'
-                            ).set;
-                            nativeSetter.call(selectStatus, selectStatus.options[optionIndex].value);
-                            
-                            // Dispara eventos para React/Angular detectar a mudança
-                            selectStatus.dispatchEvent(new Event('change', { bubbles: true }));
-                            selectStatus.dispatchEvent(new Event('input', { bubbles: true }));
-                            
-                            log.push('STATUS SETADO: ' + selectStatus.options[optionIndex].text);
-                        } else {
-                            log.push('AVISO: Opção "' + args.status + '" não encontrada no select');
-                        }
-                    } else {
-                        log.push('AVISO: Nenhum select encontrado no DOM');
-                    }
-                    
-                    // ---- ENCONTRAR O CAMPO DE OBSERVAÇÃO ----
-                    // Tenta textarea primeiro
-                    const textareas = document.querySelectorAll('textarea');
-                    log.push('Total textareas no DOM: ' + textareas.length);
-                    
-                    let campoObs = null;
-                    for (let ta of textareas) {
-                        log.push('Textarea: value="' + ta.value.substring(0, 20) + '", visible=' + (ta.offsetParent !== null));
-                        if (!campoObs) campoObs = ta;
-                    }
-                    
-                    // Se não achou textarea, tenta input
-                    if (!campoObs) {
-                        const inputs = document.querySelectorAll('input[type="text"], input:not([type])');
-                        for (let inp of inputs) {
-                            if (inp.value.toLowerCase().includes('obs') || 
-                                (inp.placeholder && inp.placeholder.toLowerCase().includes('obs'))) {
-                                campoObs = inp;
-                                log.push('Input de obs encontrado: value="' + inp.value + '"');
-                                break;
-                            }
-                        }
-                    }
-                    
-                    if (campoObs) {
-                        const tagName = campoObs.tagName;
-                        const protoName = tagName === 'TEXTAREA' ? 'HTMLTextAreaElement' : 'HTMLInputElement';
-                        
-                        // Seta o valor via setter nativo
-                        const nativeSetter = Object.getOwnPropertyDescriptor(
-                            window[protoName].prototype, 'value'
-                        ).set;
-                        nativeSetter.call(campoObs, args.obs);
-                        
-                        // Dispara eventos
-                        campoObs.dispatchEvent(new Event('input', { bubbles: true }));
-                        campoObs.dispatchEvent(new Event('change', { bubbles: true }));
-                        campoObs.dispatchEvent(new InputEvent('input', { bubbles: true, data: args.obs }));
-                        
-                        // Foca no campo pra garantir
-                        campoObs.focus();
-                        
-                        log.push('OBS SETADA: "' + args.obs.substring(0, 40) + '" no ' + tagName);
-                    } else {
-                        log.push('AVISO: Nenhum campo de observação encontrado');
-                    }
-                    
-                    return log;
-                }''', {"status": status_site, "obs": str(obs).strip() if str(obs).strip().lower() not in ["nan", "none"] else ""})
+                # ----- STATUS (via Tab + Setas, igual o usuário faz manualmente) -----
+                status_sucesso = False
                 
-                # Mostra o log do JavaScript
-                for linha in resultado_js:
-                    self.log(f"  [JS] {linha}")
+                # Mapa fixo: quantas setas pra BAIXO a partir de "Ativo" (padrão do site)
+                # Negativo = seta pra CIMA
+                MAPA_SETAS_DO_ATIVO = {
+                    "Aguardando Garantia": -1,   # 1 ArrowUp
+                    "Ativo": 0,                  # já selecionado
+                    "Roubado/Furtado": 1,        # 1 ArrowDown
+                    "Inservivel": 2,             # 2 ArrowDown
+                    "Desativado": 3,             # 3 ArrowDown
+                    "Desconhecido": 4,           # 4 ArrowDown
+                    "Aguardando Manutencao": 5,  # 5 ArrowDown
+                    "Não localizado": 6,         # 6 ArrowDown
+                }
+                
+                setas = MAPA_SETAS_DO_ATIVO.get(status_site)
+                
+                if setas is not None and setas != 0:
+                    # 1. Tab para focar no select do status (igual o usuário faz)
+                    page.keyboard.press("Tab")
+                    page.wait_for_timeout(500)
                     
+                    # 2. Apertar as setas o número correto de vezes
+                    tecla = "ArrowDown" if setas > 0 else "ArrowUp"
+                    self.log(f"  Navegando: {abs(setas)}x {tecla} para '{status_site}'")
+                    
+                    for _ in range(abs(setas)):
+                        page.keyboard.press(tecla)
+                        page.wait_for_timeout(200)
+                    
+                    # 3. Tab para confirmar e ir para o campo de observação
+                    page.wait_for_timeout(300)
+                    page.keyboard.press("Tab")
+                    
+                    self.log(f"  ✔ Status selecionado via teclado: {status_site}")
+                    status_sucesso = True
+                    
+                elif setas == 0:
+                    self.log(f"  Status já é Ativo, pulando seleção.")
+                    status_sucesso = True
+                else:
+                    self.log(f"  AVISO: Status '{status_site}' não está no mapa de opções conhecidas.")
+
+                # ----- OBSERVAÇÃO -----
+                obs_limpa = str(obs).strip()
+                if obs_limpa.lower() in ["nan", "none"]:
+                    obs_limpa = ""
+
+                textarea_elem = page.locator('textarea').first
+                if textarea_elem.count() > 0:
+                    # Limpa e preenche garantindo que o React detecte
+                    textarea_elem.click(force=True)
+                    textarea_elem.fill("")
+                    page.wait_for_timeout(100)
+                    textarea_elem.fill(obs_limpa)
+                    self.log(f"  Observação preenchida: {obs_limpa[:30]}...")
+                else:
+                    self.log("  AVISO: Campo de Observação (textarea) não encontrado.")
+
             except Exception as e:
-                self.log(f"  Erro no JavaScript: {str(e)[:120]}")
+                self.log(f"  Erro ao preencher status/obs: {str(e)[:120]}")
 
             page.wait_for_timeout(500)
 

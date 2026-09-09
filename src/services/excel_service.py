@@ -1,5 +1,6 @@
 import pandas as pd
 from typing import List, Dict
+from src.core.status_mapper import mapear_status
 
 class ExcelService:
     @staticmethod
@@ -35,7 +36,7 @@ class ExcelService:
         registros = []
         for _, row in df.iterrows():
             serial = str(row[c_ser]).strip()
-            status = str(row[c_sta]).strip()
+            status_bruto = str(row[c_sta]).strip()
             obs = str(row[c_obs]).strip()
             hostname = str(row[c_host]).strip() if c_host else ""
             
@@ -46,6 +47,12 @@ class ExcelService:
             if len(serial) <= 4:
                 continue
                 
+            # Mapeia o status para verificar se resultará em "Ativo"
+            status_mapeado = mapear_status(status_bruto)
+            if status_mapeado == "Ativo":
+                # Ignora completamente equipamentos que seriam definidos como Ativo (ex: Disponível, Ativo, etc)
+                continue
+                
             if obs.lower() == 'nan':
                 obs = ""
             if hostname.lower() == 'nan':
@@ -53,7 +60,7 @@ class ExcelService:
                 
             registros.append({
                 "serial": serial,
-                "status": status,
+                "status": status_bruto,
                 "obs": obs,
                 "hostname": hostname
             })
