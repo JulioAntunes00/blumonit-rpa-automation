@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+.venv/
+venv/
+ENV/
+
+# Playwright & Browser Session Data (Sensível - Cookies/Sessão)
+browser_data/
+.playwright/
+
+# Planilhas e Dados Pessoais / Dados do Usuário
+*.xlsx
+*.xls
+*.csv
+prints/
+
+# Arquivos de Build / Executáveis
+*.exe
+*.spec
+
+# IDEs e Sistema
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Notas locais e Memória
+memoria.md
+*.log
+
