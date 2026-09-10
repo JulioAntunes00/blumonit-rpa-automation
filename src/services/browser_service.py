@@ -365,46 +365,46 @@ class BrowserService:
             # 7+8. STATUS + OBSERVAÇÃO (VIA PLAYWRIGHT NATIVO)
             # ============================================================
             try:
-                # ----- STATUS (via Tab + Setas, igual o usuário faz manualmente) -----
+                # ----- STATUS (via Tab + Home + Setas, igual o usuário faz manualmente) -----
                 status_sucesso = False
                 
-                # Mapa fixo: quantas setas pra BAIXO a partir de "Ativo" (padrão do site)
-                # Negativo = seta pra CIMA
-                MAPA_SETAS_DO_ATIVO = {
-                    "Aguardando Garantia": -1,   # 1 ArrowUp
-                    "Ativo": 0,                  # já selecionado
-                    "Roubado/Furtado": 1,        # 1 ArrowDown
-                    "Inservivel": 2,             # 2 ArrowDown
-                    "Desativado": 3,             # 3 ArrowDown
-                    "Desconhecido": 4,           # 4 ArrowDown
-                    "Aguardando Manutencao": 5,  # 5 ArrowDown
-                    "Não localizado": 6,         # 6 ArrowDown
+                # Mapa de índices: quantas setas pra BAIXO a partir do topo ("Aguardando Garantia")
+                MAPA_INDICES = {
+                    "Aguardando Garantia": 0,
+                    "Ativo": 1,
+                    "Roubado/Furtado": 2,
+                    "Inservivel": 3,
+                    "Desativado": 4,
+                    "Desconhecido": 5,
+                    "Aguardando Manutencao": 6,
+                    "Não localizado": 7,
                 }
                 
-                setas = MAPA_SETAS_DO_ATIVO.get(status_site)
+                setas_para_baixo = MAPA_INDICES.get(status_site)
                 
-                if setas is not None and setas != 0:
-                    # 1. Tab para focar no select do status (igual o usuário faz)
+                if setas_para_baixo is not None:
+                    # 1. Tab para focar no select do status
                     page.keyboard.press("Tab")
                     page.wait_for_timeout(500)
                     
-                    # 2. Apertar as setas o número correto de vezes
-                    tecla = "ArrowDown" if setas > 0 else "ArrowUp"
-                    self.log(f"  Navegando: {abs(setas)}x {tecla} para '{status_site}'")
+                    # 2. Tecla Home para voltar ao topo ("Aguardando Garantia")
+                    page.keyboard.press("Home")
+                    page.wait_for_timeout(300)
                     
-                    for _ in range(abs(setas)):
-                        page.keyboard.press(tecla)
-                        page.wait_for_timeout(200)
+                    # 3. Apertar ArrowDown a quantidade de vezes necessária
+                    if setas_para_baixo > 0:
+                        self.log(f"  Navegando: {setas_para_baixo}x ArrowDown para '{status_site}'")
+                        for _ in range(setas_para_baixo):
+                            page.keyboard.press("ArrowDown")
+                            page.wait_for_timeout(100)
+                    else:
+                        self.log(f"  Status é 'Aguardando Garantia', já selecionado via tecla Home.")
                     
-                    # 3. Tab para confirmar e ir para o campo de observação
+                    # 4. Tab para confirmar e ir para o campo de observação
                     page.wait_for_timeout(300)
                     page.keyboard.press("Tab")
                     
                     self.log(f"  ✔ Status selecionado via teclado: {status_site}")
-                    status_sucesso = True
-                    
-                elif setas == 0:
-                    self.log(f"  Status já é Ativo, pulando seleção.")
                     status_sucesso = True
                 else:
                     self.log(f"  AVISO: Status '{status_site}' não está no mapa de opções conhecidas.")
